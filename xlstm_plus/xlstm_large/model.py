@@ -188,7 +188,7 @@ class xLSTMLarge(nn.Module):
 
         logits = self.lm_head(x)
         logits_capped = soft_cap(logits, self.config.output_logit_soft_cap)
-        if self.config.return_last_states:
+        if self.config.return_last_states or (state is not None) or return_detached_states:
             return logits_capped, state
         else:
             return logits_capped

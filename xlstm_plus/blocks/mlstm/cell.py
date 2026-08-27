@@ -151,6 +151,11 @@ class mLSTMCell(nn.Module):
         h_state_norm = h_state_norm.transpose(1, 2).reshape(B, S, -1)
 
         if need_state:
+            # Ensure n_state is (B, NH, DH, 1) to match mLSTMCell.step shape contract
+            c_out, n_out, m_out = out_state
+            if n_out is not None and n_out.ndim == 3:
+                n_out = n_out.unsqueeze(-1)
+            out_state = (c_out, n_out, m_out)
             return h_state_norm, out_state
         return h_state_norm
 
