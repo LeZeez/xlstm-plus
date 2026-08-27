@@ -17,7 +17,7 @@ cd xlstm_plus
 pip install -e .
 ```
 
-Triton Kernels (required for xLSTM Large 7B and provides faster training):
+Triton Kernels (optional for mode="auto", required for Triton acceleration or strict kernel modes):
 ```bash
 pip install mlstm_kernels
 ```

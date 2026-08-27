@@ -85,6 +85,8 @@ def generate_tokens(
                 last_token = next_token
     else:
         # we only return the state
+        if prefill_tokens is not None:
+            _, state = llm_forward(prefill_tokens, state)
         generated_tokens = None
 
     return generated_tokens, state

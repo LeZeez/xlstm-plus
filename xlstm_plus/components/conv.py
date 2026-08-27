@@ -93,7 +93,8 @@ class CausalConv1d(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self, **kwargs):
-        self.conv.reset_parameters()
+        if self.conv is not None:
+            self.conv.reset_parameters()
 
     def _create_weight_decay_optim_groups(
         self,

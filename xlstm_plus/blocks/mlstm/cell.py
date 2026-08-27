@@ -96,14 +96,49 @@ class mLSTMCell(nn.Module):
             # Use chunkwise_simple which supports initial state and returns
             # the final (C, n, m) carry.
             c_init, n_init, m_init = (None, None, None) if state is None else state
-            h_state, out_state = chunkwise_simple(
-                queries=q, keys=k, values=v,
-                igate_preact=igate_preact.squeeze(-1),
-                fgate_preact=fgate_preact.squeeze(-1),
-                initial_C=c_init, initial_n=n_init, initial_m=m_init,
-                chunk_size=min(S, 64),
-                return_last_state=True,
-            )
+            chunk_size = min(S, 64)
+            ig_squeezed = igate_preact.squeeze(-1)
+            fg_squeezed = fgate_preact.squeeze(-1)
+            if S % chunk_size != 0:
+                s_full = (S // chunk_size) * chunk_size
+                h_state_full, state_mid = chunkwise_simple(
+                    queries=q[:, :, :s_full],
+                    keys=k[:, :, :s_full],
+                    values=v[:, :, :s_full],
+                    igate_preact=ig_squeezed[:, :, :s_full],
+                    fgate_preact=fg_squeezed[:, :, :s_full],
+                    initial_C=c_init,
+                    initial_n=n_init,
+                    initial_m=m_init,
+                    chunk_size=chunk_size,
+                    return_last_state=True,
+                )
+                h_state_rem, out_state = chunkwise_simple(
+                    queries=q[:, :, s_full:],
+                    keys=k[:, :, s_full:],
+                    values=v[:, :, s_full:],
+                    igate_preact=ig_squeezed[:, :, s_full:],
+                    fgate_preact=fg_squeezed[:, :, s_full:],
+                    initial_C=state_mid[0],
+                    initial_n=state_mid[1],
+                    initial_m=state_mid[2],
+                    chunk_size=S - s_full,
+                    return_last_state=True,
+                )
+                h_state = torch.cat([h_state_full, h_state_rem], dim=2)
+            else:
+                h_state, out_state = chunkwise_simple(
+                    queries=q,
+                    keys=k,
+                    values=v,
+                    igate_preact=ig_squeezed,
+                    fgate_preact=fg_squeezed,
+                    initial_C=c_init,
+                    initial_n=n_init,
+                    initial_m=m_init,
+                    chunk_size=chunk_size,
+                    return_last_state=True,
+                )
         else:
             h_state = self.backend_fn(
                 queries=q, keys=k, values=v,

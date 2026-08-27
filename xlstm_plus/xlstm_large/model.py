@@ -213,9 +213,18 @@ class xLSTMLarge(nn.Module):
             tokens: Generated tokens tensor of shape [B, S].
             state: State dictionary of the model after the last generation step.
         """
+        def _fwd(tokens: torch.Tensor, st: mLSTMStateType | None):
+            res = self.forward(tokens, st)
+            if isinstance(res, tuple):
+                return res
+            # If return_last_states=False was configured, forward returns only logits.
+            # In that case, call backbone directly to get the updated state.
+            _, new_st = self.backbone(self.embedding(tokens), st)
+            return res, new_st
+
         sampling_fn = get_sampling_fn(sampling_type)
         tokens, state = generate_tokens(
-            llm_forward=self.forward,
+            llm_forward=_fwd,
             prefill_tokens=prefill_tokens,
             max_length=max_length,
             token_sample_fn=sampling_fn,
