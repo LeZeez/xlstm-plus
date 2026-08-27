@@ -4,15 +4,16 @@ This is a fork of the original [NX-AI/xlstm](https://github.com/NX-AI/xlstm) rep
 
 It includes additonal features for more flexible training and support to Truncated Backpropagation Through Time (TBPTT).
 
+For features that weren't in the original repository, scroll down to [Features](https://github.com/LeZeez/xlstm-plus#Features).
 
 ## Installation
 Create a virtual environment (e.g., with Conda from the file `environment_pt240cu124.yaml`) and install via pip:
 ```bash
-pip install git+https://github.com/LeZeez/xlstm_plus.git
+pip install git+https://github.com/LeZeez/xlstm-plus.git
 
 ### Or
 
-git clone https://github.com/LeZeez/xlstm_plus.git
+git clone https://github.com/LeZeez/xlstm-plus.git
 cd xlstm_plus
 pip install -e .
 ```
@@ -22,181 +23,24 @@ Triton Kernels (optional for mode="auto", required for Triton acceleration or st
 pip install mlstm_kernels
 ```
 
+## Overview
+The repository includes the original paper-accurate mLSTM* and sLSTM** as well as the newer xLSTMLarge architecture that [NX-AI/xLSTM-7b](https://huggingface.co/NX-AI/xLSTM-7b) uses.
 
+NX-AI did a great job in optimizing the xLSTM architecture in terms of training throughput and stability. 
+The code for the updated architecture is located in `xlstm_plus/xlstm_large`.
 
-## Features
+*[Figure 11 block](https://arxiv.org/pdf/2405.04517#page=30)**
 
-### Auto mode for xLSTMLarge
-Uses triton kernels when sequences aligns with kernels constraints (e.g., seq_len divisible by chunk size, head dimension > 16) and the rest of sequences are passed to the native scan.
-
-When kernels are not available, or you are on CPU, it falls back to native scan with no constraints.
-
-```python
-import torch
-from xlstm_plus.xlstm_large import xLSTMLarge, xLSTMLargeConfig
-
-config = xLSTMLargeConfig(
-    embedding_dim=256,
-    num_heads=4,
-    num_blocks=4,
-    vocab_size=1000,
-    chunk_size=64,
-    mode="auto",  # Uses Triton when S % 64 == 0; falls back to native scan otherwise
-    return_last_states=True,
-)
-model = xLSTMLarge(config)
-```
-
-### Parameters `boundaries` and `return_detached_states` in forward pass
-Artificially injects `-1000` in the forget gate at the first token of each sequence, given that a tensor of bools in size `(B, T)` is provided - with `True` corresponding to the first token - so you can pack documents without padding. Returned states would be already detached, ready to be passed to the next batch (TBPTT).
-
-```python
-# Pack multiple documents into a single sequence without cross-document attention leakage
-B, S = 2, 64
-x = torch.randint(0, 1000, (B, S))
-
-# Mark position 32 as the start of Document 2
-boundaries = torch.zeros(B, S, dtype=torch.bool)
-boundaries[:, 32] = True
-
-logits, state = model(x, boundaries=boundaries, return_detached_states=True)
-```
-
-### Checkpointing
-Checkpointing decreases memory usage in exchange for slower training (~20-30% slower).
-
-```python
-from xlstm_plus.xlstm_large import xLSTMLarge, xLSTMLargeConfig
-
-config = xLSTMLargeConfig(
-    embedding_dim=256,
-    num_heads=4,
-    num_blocks=4,
-    vocab_size=1000,
-    chunk_size=64,
-    use_checkpoint=True,  # Saves VRAM with non-reentrant activation checkpointing
-    return_last_states=True,
-    mode="auto",
-)
-model = xLSTMLarge(config)
-```
-
-### Functions `zero_rows()` and `detach_states()`
-
-Utilities for asynchronous batching and continuous TBPTT memory management:
-- `detach_states(state)`: Recursively detaches all nested tensors in the state dictionary across steps.
-- `zero_rows(state, mask)`: In-place zeroes memory for sequences in the batch that reached EOS.
-
-```python
-import torch
-from xlstm_plus import detach_states, zero_rows
-from xlstm_plus.xlstm_large import xLSTMLarge, xLSTMLargeConfig
-
-config = xLSTMLargeConfig(
-    embedding_dim=256,
-    num_heads=4,
-    num_blocks=4,
-    vocab_size=1000,
-    return_last_states=True,
-    mode="auto",
-)
-model = xLSTMLarge(config)
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-
-state = None
-for x_chunk, y_chunk, finished_mask in train_dataloader:
-    optimizer.zero_grad()
-    logits, state = model(x_chunk, state=state)
-    loss = torch.nn.functional.cross_entropy(logits.view(-1, 1000), y_chunk.view(-1))
-    loss.backward()
-    optimizer.step()
-
-    # Detach states before the next batch/chunk
-    state = detach_states(state)
-
-    # In-place reset memory rows for finished sequences in the active batch
-    # finished_mask: 1D bool tensor of shape (batch_size,)
-    if finished_mask.any():
-        zero_rows(state, finished_mask)
-```
-
-
-
-# (&darr; Read note) Original repository README 
-
-*Note: packages imports here are renamed to `xlstm_plus`*
-
-<div align="center">
-
-# xLSTM: Extended Long Short-Term Memory
-
-[![Paper](https://img.shields.io/static/v1?label=Paper&message=2405.04517&color=B31B1B&logo=arXiv)](https://arxiv.org/abs/2405.04517)
-[![PyPI](https://img.shields.io/pypi/v/xlstm?color=blue)](https://pypi.org/project/xlstm/)
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/xlstm?period=total&units=INTERNATIONAL_SYSTEM&left_color=GREY&right_color=BLUE&left_text=downloads)](https://pepy.tech/projects/tirex-ts)
-![GitHub Repo stars](https://img.shields.io/github/stars/NX-AI/xlstm)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
-
-![xLSTM Figure](./res/desc_xlstm_overview.svg)
-
-</div>
-
-> **Paper:** https://arxiv.org/abs/2405.04517
->
-> **Authors:** Maximilian Beck, Korbinian Pöppel, Markus Spanring, Andreas Auer, Oleksandra Prudnikova, Michael Kopp, Günter Klambauer, Johannes Brandstetter, Sepp Hochreiter
-
-## About
-
-xLSTM is a new Recurrent Neural Network architecture based on ideas of the original LSTM.
-Through Exponential Gating with appropriate normalization and stabilization techniques and a new Matrix Memory it overcomes the limitations of the original LSTM 
-and shows promising performance on Language Modeling when compared to Transformers or State Space Models.
-
-:rotating_light: We trained a 7B parameter xLSTM Language Model on 2.3T tokens! :rotating_light:
-
-We refer to the optimized architecture for our xLSTM 7B as xLSTM Large. 
-
-## Minimal Installation
-
-*Removed (see Installation section above)*
-
-## Requirements
-
-This package is based on PyTorch and was tested for versions `>=1.8`. For a well-tested environment, install the `environment_pt240cu124.yaml` as:
-```bash
-conda env create -n xlstm -f environment_pt240cu124.yaml
-conda activate xlstm
-``` 
-
-For the xLSTM Large 7B model we require our [`mlstm_kernels`](https://github.com/NX-AI/mlstm_kernels) package, which provides fast kernels for the xLSTM.
-
-<div align="center">
-
-# xLSTM 7B: A Recurrent LLM for Fast and Efficient Inference
-[![Paper](https://img.shields.io/static/v1?label=Paper&message=2503.13427&color=B31B1B&logo=arXiv)](https://arxiv.org/abs/2503.13427)
-[![Hugging Face](https://img.shields.io/badge/HuggingFace-xLSTM_7B-yellow?logo=huggingface)](https://huggingface.co/NX-AI/xLSTM-7b)
-[![License](https://img.shields.io/badge/license-nxai_community-green)](https://github.com/NX-AI/tirex-internal/blob/main/LICENSE)
-
-
-> **Paper:** https://arxiv.org/abs/2503.13427
->
-> **Authors:** Maximilian Beck, Korbinian Pöppel, Phillip Lippe, Richard Kurle, Patrick M. Blies, Günter Klambauer, Sebastian Böck, Sepp Hochreiter
-
-![xLSTM Figure](./res/xlstm_7b_poster.svg)
-
-</div>
-
-We have optimized the xLSTM architecture in terms of training throughput and stability. 
-The code for the updated architecture is located in `xlstm/xlstm_large`.
-
-The model weights are available on Huggingface at https://huggingface.co/NX-AI/xLSTM-7b. 
+*[Figure 10 block](https://arxiv.org/pdf/2405.04517#page=29)***
 
 ## How to use the xLSTM Large 7B and its architecture
 
-We provide a standalone single file implementation of the xLSTM Large architecture in [`xlstm/xlstm_large/model.py`](https://github.com/NX-AI/xlstm/blob/main/xlstm/xlstm_large/model.py).
-This implementation requires our [`mlstm_kernels`](https://github.com/NX-AI/mlstm_kernels) package and other than that has no dependency on the NeurIPS xLSTM architecture implementation.
+NX-AI provided a standalone single file implementation of the xLSTM Large architecture in [`xlstm_plus/xlstm_large/model.py`](https://github.com/LeZeez/xlstm-plus/blob/main/xlstm_plus/xlstm_large/model.py).
+This implementation requires their [`mlstm_kernels`](https://github.com/NX-AI/mlstm_kernels) package and other than that has no dependency on the NeurIPS xLSTM architecture implementation.
 
-For a quick start, we provide a [`demo.ipynb`](https://github.com/NX-AI/xlstm/blob/main/notebooks/xlstm_large/demo.ipynb) notebook for the xLSTM Large architecture at `notebooks/xlstm_large/demo.ipynb`. 
+For a quick start, a [`demo.ipynb`](https://github.com/LeZeez/xlstm-plus/blob/main/notebooks/xlstm_large/demo.ipynb) notebook is provided for the xLSTM Large architecture at `notebooks/xlstm_large/demo.ipynb`. 
 
-In this notebook we import our config and model class, initialize a random model and perform a forward pass, like so:
+In this notebook we import xLSTM Large config and model class, initialize a random model and perform a forward pass, like so:
 
 ```python
 import torch
@@ -226,7 +70,7 @@ out.shape[1:] == (256, 2048)
 
 ## Recommendation for other hardware
 
-We have tested our model mostly on NVIDIA GPUs, however our Triton kernels should also run on AMD GPUs. 
+xLSTM Large models were tested mostly on NVIDIA GPUs, however [`mlstm_kernels`](https://github.com/NX-AI/mlstm_kernels) should also run on AMD GPUs. 
 For other platforms, like Apple Metal, we recommend using the native PyTorch implementations for now:
 
 ```python 
@@ -243,15 +87,11 @@ xlstm_config = xLSTMLargeConfig(
 )
 ```
 
-If you are working inside Apple's MLX ecosystem, check out the community-driven
-[xLSTM-metal](https://github.com/MLXPorts/xLSTM-metal) port which provides an
-MLX-native implementation of xLSTM targeting Apple Silicon.
-
 # Models from the xLSTM NeurIPS Paper
 
 This section explains how to use the models from the xLSTM paper.
 
-## How to use the xLSTM architecture from our NeurIPS paper
+## How to use the xLSTM architecture from NX-AI NeurIPS paper
 
 For non language applications or for integrating in other architectures you can use the `xLSTMBlockStack` and for language modeling or other token-based applications you can use the `xLSTMLMModel`.
 
@@ -405,25 +245,121 @@ y = xlstm_stack(x)
 y.shape[1:] == (256, 50304)
 ```
 
+## Features
 
-## Experiments
+### Auto mode for xLSTMLarge
+Uses triton kernels when sequences aligns with kernels constraints (e.g., seq_len divisible by chunk size, head dimension > 16) and the rest of sequences are passed to the native scan.
 
-The synthetic experiments show-casing the benefits of sLSTM over mLSTM and vice versa best are the Parity task and the Multi-Query Associative Recall task. The Parity task can only be solved with state-tracking capabilities provided by the memory-mixing of sLSTM. The Multi-Query Associative Recall task measures memorization capabilities, where the matrix-memory and state expansion of mLSTM is very beneficial.
-In combination they do well on both tasks.
+When kernels are not available, or you are on CPU, it falls back to native scan with no constraints.
 
-To run each, run the `main.py` in the experiments folder like:
+```python
+import torch
+from xlstm_plus.xlstm_large import xLSTMLarge, xLSTMLargeConfig
+
+config = xLSTMLargeConfig(
+    embedding_dim=256,
+    num_heads=4,
+    num_blocks=4,
+    vocab_size=1000,
+    chunk_size=64,
+    mode="auto",  # Uses Triton when S % 64 == 0; falls back to native scan otherwise
+    return_last_states=True,
+)
+model = xLSTMLarge(config)
 ```
-PYTHONPATH=. python experiments/main.py --config experiments/parity_xlstm01.yaml   # xLSTM[0:1], sLSTM only
-PYTHONPATH=. python experiments/main.py --config experiments/parity_xlstm10.yaml   # xLSTM[1:0], mLSTM only
-PYTHONPATH=. python experiments/main.py --config experiments/parity_xlstm11.yaml   # xLSTM[1:1], mLSTM and sLSTM
+
+### Parameters `boundaries` and `return_detached_states` in forward pass
+Artificially injects `-1000` in the forget gate at the first token of each sequence, given that a tensor of bools in size `(B, T)` is provided - with `True` corresponding to the first token - so you can pack documents without padding. Returned states would be already detached, ready to be passed to the next batch (TBPTT).
+
+```python
+# Pack multiple documents into a single sequence without cross-document attention leakage
+B, S = 2, 64
+x = torch.randint(0, 1000, (B, S))
+
+# Mark position 32 as the start of Document 2
+boundaries = torch.zeros(B, S, dtype=torch.bool)
+boundaries[:, 32] = True
+
+logits, state = model(x, boundaries=boundaries, return_detached_states=True)
 ```
 
-Note that the training loop does not contain early stopping or test evaluation.
+### Checkpointing
+Checkpointing decreases memory usage in exchange for slower training (~20-30% slower).
+
+```python
+from xlstm_plus.xlstm_large import xLSTMLarge, xLSTMLargeConfig
+
+config = xLSTMLargeConfig(
+    embedding_dim=256,
+    num_heads=4,
+    num_blocks=4,
+    vocab_size=1000,
+    chunk_size=64,
+    use_checkpoint=True,  # Saves VRAM with non-reentrant activation checkpointing
+    return_last_states=True,
+    mode="auto",
+)
+model = xLSTMLarge(config)
+```
+
+### Functions `zero_rows()` and `detach_states()`
+
+Utilities for asynchronous batching and continuous TBPTT memory management:
+- `detach_states(state)`: Recursively detaches all nested tensors in the state dictionary across steps.
+- `zero_rows(state, mask)`: In-place zeroes memory for sequences in the batch that reached EOS.
+
+```python
+import torch
+from xlstm_plus import detach_states, zero_rows
+from xlstm_plus.xlstm_large import xLSTMLarge, xLSTMLargeConfig
+
+config = xLSTMLargeConfig(
+    embedding_dim=256,
+    num_heads=4,
+    num_blocks=4,
+    vocab_size=1000,
+    return_last_states=True,
+    mode="auto",
+)
+model = xLSTMLarge(config)
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+
+state = None
+for x_chunk, y_chunk, finished_mask in train_dataloader:
+    optimizer.zero_grad()
+    logits, state = model(x_chunk, state=state)
+    loss = torch.nn.functional.cross_entropy(logits.view(-1, 1000), y_chunk.view(-1))
+    loss.backward()
+    optimizer.step()
+
+    # Detach states before the next batch/chunk
+    state = detach_states(state)
+
+    # In-place reset memory rows for finished sequences in the active batch
+    # finished_mask: 1D bool tensor of shape (batch_size,)
+    if finished_mask.any():
+        zero_rows(state, finished_mask)
+```
+
+The model weights are available on Huggingface at https://huggingface.co/NX-AI/xLSTM-7b. 
+
 
 
 ## Citation
 
-If you use this codebase, or otherwise find our work valuable, please cite the xLSTM paper:
+
+Original xLSTM paper
+> **Paper:** https://arxiv.org/abs/2405.04517
+>
+> **Authors:** Maximilian Beck, Korbinian Pöppel, Markus Spanring, Andreas Auer, Oleksandra Prudnikova, Michael Kopp, Günter Klambauer, Johannes Brandstetter, Sepp Hochreiter
+
+xLSTM 7B paper
+
+> **Paper:** https://arxiv.org/abs/2503.13427
+>
+> **Authors:** Maximilian Beck, Korbinian Pöppel, Phillip Lippe, Richard Kurle, Patrick M. Blies, Günter Klambauer, Sebastian Böck, Sepp Hochreiter
+
+
 ```
 @inproceedings{beck:24xlstm,
   title = {xLSTM: Extended Long Short-Term Memory}, 
