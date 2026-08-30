@@ -66,13 +66,13 @@ if (CUDAToolkit_FOUND)
   python_add_library(
       _slstm MODULE
 
-      xlstm/blocks/slstm/src/cuda/slstm.cc
-      xlstm/blocks/slstm/src/cuda/slstm_forward.cu
-      xlstm/blocks/slstm/src/cuda/slstm_backward.cu
-      xlstm/blocks/slstm/src/cuda/slstm_backward_cut.cu
-      xlstm/blocks/slstm/src/cuda/slstm_pointwise.cu
-      xlstm/blocks/slstm/src/util/blas.cu
-      xlstm/blocks/slstm/src/util/cuda_error.cu
+      xlstm_plus/blocks/slstm/src/cuda/slstm.cc
+      xlstm_plus/blocks/slstm/src/cuda/slstm_forward.cu
+      xlstm_plus/blocks/slstm/src/cuda/slstm_backward.cu
+      xlstm_plus/blocks/slstm/src/cuda/slstm_backward_cut.cu
+      xlstm_plus/blocks/slstm/src/cuda/slstm_pointwise.cu
+      xlstm_plus/blocks/slstm/src/util/blas.cu
+      xlstm_plus/blocks/slstm/src/util/cuda_error.cu
 
       WITH_SOABI
   )

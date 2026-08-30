@@ -38,6 +38,10 @@ class LinearHeadwiseExpandConfig:
         if self._out_features < 0:
             self._out_features = round(self.expand_factor_up * self.in_features)
 
+        assert (
+            self._out_features % self.num_heads == 0
+        ), f"_out_features ({self._out_features}) must be a multiple of num_heads ({self.num_heads})"
+
 
 class LinearHeadwiseExpand(nn.Module):
     """This is a structured projection layer that projects the input to a higher dimension.

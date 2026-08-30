@@ -1,7 +1,7 @@
 # Copyright (c) NXAI GmbH and its affiliates 2024
 # Maximilian Beck
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Optional, Sequence
 
 import torch
 from torch import nn
@@ -46,10 +46,30 @@ class xLSTMLMModel(WeightDecayOptimGroupMixin, nn.Module):
         if not self.config.tie_weights:
             small_init_init_(self.lm_head.weight, dim=self.config.embedding_dim)
 
-    def forward(self, idx: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        idx: torch.Tensor,
+        boundaries: Optional[torch.Tensor] = None,
+        state: Optional[dict] = None,
+        return_last_states: bool = False,
+        return_detached_states: bool = False,
+        **kwargs,
+    ) -> torch.Tensor | tuple[torch.Tensor, dict]:
         x = self.token_embedding(idx)
         x = self.emb_dropout(x)
-        x = self.xlstm_block_stack(x)
+        need_state = return_last_states or (state is not None)
+        if need_state:
+            x, state = self.xlstm_block_stack(
+                x,
+                boundaries=boundaries,
+                state=state,
+                return_last_states=True,
+                return_detached_states=return_detached_states,
+                **kwargs,
+            )
+            logits = self.lm_head(x)
+            return logits, state
+        x = self.xlstm_block_stack(x, boundaries=boundaries, **kwargs)
         logits = self.lm_head(x)
         return logits
 
